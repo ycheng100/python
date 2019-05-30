@@ -23,7 +23,7 @@ def meshGrid(xlim, ylim, n=30):
     XX, YY = np.meshgrid(xx,yy)
     return XX, YY
 
-def decisionContour(ax, clf, XX, YY, **params):
+def decisionContour(ax, clf, XX, YY,validate_features=True, **params):
     """Plot the decision boundaries for a classifier.
 
     Parameters
@@ -36,11 +36,12 @@ def decisionContour(ax, clf, XX, YY, **params):
     """
     # Flatten array XX and YY then stack them vertically then transpose: 1st column XX and 2nd column YY
     xy = np.vstack([XX.ravel(), YY.ravel()]).T
-    #Z = clf.decision_function(xy)
-    #Z=Z.reshape([XX.shape[0],XX.shape[1],Z.shape[1]])
-    Z = clf.predict(xy).reshape(XX.shape)
+    if (validate_features==False): # XGBoost
+        Z = clf.predict(xy,validate_features=False).reshape(XX.shape)
+    else: # Other classifier
+        Z = clf.predict(xy).reshape(XX.shape)
+		
     # plot decision boundary and margins
-    #ax.contour(XX, YY, Z,  colors='k', levels=[-1,0, 1], alpha=1,linestyles=[':', '-', '--'])
     ax.contour(XX, YY, Z, alpha=1)	
     return
 
