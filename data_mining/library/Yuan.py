@@ -1,21 +1,22 @@
 from sklearn.metrics import auc,roc_curve,log_loss,accuracy_score
 import numpy as np
-from sklearn.model_selection import KFold,StratifiedKFold
+from sklearn.model_selection import StratifiedKFold
 import pandas as pd # creating data frame for regression
 from matplotlib import pyplot as plt
+from scipy.stats import pearsonr # computing correlation coefficient
 
 def meshGrid(xlim, ylim, n=30):
     """Create a mesh of points to plot in
 
     Parameters
     ----------
-    xlim: range of x data to base x-axis meshgrid on
-    ylim: range of y data to base y-axis meshgrid on
-    n: number of points in x and y for meshgrid, optional
+    @params xlim: range of x data to base x-axis meshgrid on
+    @params ylim: range of y data to base y-axis meshgrid on
+    @params n: number of points in x and y for meshgrid, optional
 
     Returns
     -------
-    XX, YY : ndarray
+    @return XX, YY : ndarray
     """
     # create grid to evaluate model
     xx = np.linspace(xlim[0], xlim[1], n)
@@ -28,11 +29,11 @@ def decisionContour(ax, clf, XX, YY,validate_features=True, **params):
 
     Parameters
     ----------
-    ax: matplotlib axes object
-    clf: a classifier
-    XX: x-axis meshgrid ndarray
-    YY: y-axis meshgrid ndarray
-    params: dictionary of params to pass to contourf, optional
+    @params ax: matplotlib axes object
+    @params clf: a classifier
+    @params XX: x-axis meshgrid ndarray
+    @params YY: y-axis meshgrid ndarray
+    @params params: dictionary of params to pass to contourf, optional
     """
     # Flatten array XX and YY then stack them vertically then transpose: 1st column XX and 2nd column YY
     xy = np.vstack([XX.ravel(), YY.ravel()]).T
@@ -45,10 +46,20 @@ def decisionContour(ax, clf, XX, YY,validate_features=True, **params):
     ax.contour(XX, YY, Z, alpha=1)	
     return
 
-# Crossvalidation with AUC scoring on predicted probability (between 0 and 1)
-def crossvalidation_auc(numFold,clf,X,y,modelType):
-# Note clf is changed inside the function as passed by reference
-	#folds = KFold(n_splits=numFold)
+def crossValidationAuc(numFold,clf,X,y,modelType):
+	"""Cross Validation (CV) with Area-Under-Curve (AUC) scoring on predicted probability, decision function value or predicted value depending on modelType
+	@params numFold: # of stratified folds for CV
+	@params clf: classification/regression model. Note clf is changed inside the function as passed by reference
+	@params X: input feature matrix
+	@params y: input label vector
+	@params modelType: type of models
+	Type 1 model has predict_proba: probabalistic 
+	Type 2 model has decision_function: e.g. SVC
+	Type 3 model has predict: e.g. regression
+	@return: AUC of pooled ROC curve, accuracy of predictions, predicted labels, false-positive fraction, true-positive fraction, thresholds for poold ROC curve,
+	and metrics for each fold: AUC, number of features with non-zero coefficients/importances, accuracy
+	""" 
+	
 	folds = StratifiedKFold(n_splits=numFold)
 	numRow=y.shape[0]
 	pooledTrue=np.zeros(shape=(len(y)))
@@ -69,58 +80,61 @@ def crossvalidation_auc(numFold,clf,X,y,modelType):
 		endIndex=len(y_test)+startIndex
 		# training
 		fittedModel=clf.fit(x_train, y_train)
-		if (modelType==1): # Model can predict_proba 
+		if (modelType==1): # Model can predict_proba: probabalistic 
 			predicted_probability=fittedModel.predict_proba(x_test)
 			# Probability for class 1
 			y_proba=predicted_probability[:,1]
 			featureCount=sum(fittedModel.feature_importances_.ravel()!=0)
-		elif (modelType==2): # Model has decision_function
+		elif (modelType==2): # Model has decision_function: SVC
 			y_proba=fittedModel.decision_function(x_test)
 			featureCount=x_test.shape[1]
-		else: # Model has predict: linear regression
+		else: # Model has predict: regression
 			y_proba=fittedModel.predict(x_test)
 			featureCount=sum(fittedModel.coef_.ravel()!=0)
 
-	pooledPredict[startIndex:endIndex]=y_proba
-	pooledTrue[startIndex:endIndex]=y_test
-	fpf, tpf, thresholds =roc_curve(y_test, y_proba, pos_label=1)
-	accuracy,yPred=accuracyScore(optimalThreshold(fpf,tpf,thresholds),y_test,y_proba)
-	foldMetrics[i,:]=[auc(fpf,tpf),featureCount,accuracy]
-	# Go to next fold
-	i=i+1
-	startIndex=endIndex
+		# Pool predicted values from different folds into one vector
+		pooledPredict[startIndex:endIndex]=y_proba
+		pooledTrue[startIndex:endIndex]=y_test
+		# ROC curve and metrics for each fold
+		fpf, tpf, thresholds =roc_curve(y_test, y_proba, pos_label=1)
+		accuracy,yPred=accuracyScore(optimalThreshold(fpf,tpf,thresholds),y_test,y_proba)
+		foldMetrics[i,:]=[auc(fpf,tpf),featureCount,accuracy]
+		# Go to next fold
+		i=i+1
+		startIndex=endIndex
 
 	y_proba=pooledPredict.ravel()
 	y_true=pooledTrue.ravel()
-	# Pooled ROC curve      
+	# Pooled ROC curve and metrics for all folds      
 	fpf, tpf, thresholds = roc_curve(y_true,y_proba , pos_label=1)	
 	accuracy,yPred=accuracyScore(optimalThreshold(fpf,tpf,thresholds),y_true,y_proba)
 
 	return auc(fpf,tpf),accuracy,fpf,tpf,thresholds,foldMetrics
 
-# Benchmark models with cross validation
 def benchmarkCV(models,X,y,numFold,modelTypes,modelNames):
-# Note models are changed inside the function as passed by reference
-  numModel=len(models)
-  fpfValues=[]
-  senValues=[]
-  thresholds=[]
-  modelMetrics=np.zeros(shape=(numModel,3))
-  cvMetrics=np.zeros(shape=(numModel,numFold,3))
+	"""Benchmark models with cross validation
+	"""
+	# Note models are changed inside the function as passed by reference
+	numModel=len(models)
+	fpfValues=[]
+	senValues=[]
+	thresholds=[]
+	modelMetrics=np.zeros(shape=(numModel,3))
+	cvMetrics=np.zeros(shape=(numModel,numFold,3))
 
-  for j in range(0,numModel):
-      clf=models[j]
-      modelType=modelTypes[j]
-      pooledMetrics,fpf,sen,thre,foldMetrics=crossvalidation_auc(numFold,clf,X,y,modelType)
-      modelMetrics[j,:]=pooledMetrics
-      cvMetrics[j,:]=foldMetrics
-      fpfValues.append(fpf)
-      senValues.append(sen)
-      thresholds.append(thre)
-      print(str(j)+'. '+modelNames[j]+': '+str(pooledMetrics))
-      print(foldMetrics)
+	for j in range(0,numModel):
+		clf=models[j]
+		modelType=modelTypes[j]
+		pooledMetrics,fpf,sen,thre,foldMetrics=crossvalidation_auc(numFold,clf,X,y,modelType)
+		modelMetrics[j,:]=pooledMetrics
+		cvMetrics[j,:]=foldMetrics
+		fpfValues.append(fpf)
+		senValues.append(sen)
+		thresholds.append(thre)
+		print(str(j)+'. '+modelNames[j]+': '+str(pooledMetrics))
+		print(foldMetrics)
 
-  return modelMetrics,fpfValues,senValues,thresholds,cvMetrics
+	return modelMetrics,fpfValues,senValues,thresholds,cvMetrics
 
 # Plot ROC curve# Plot of pooled ROC and compute AUC
 def plotRoc(fpfValues,senValues,titleString,labelX=0.6,labelY=0.2):
@@ -193,3 +207,10 @@ def classificationMetrics(yTrue,yRegression):
 	threshold=optimalThreshold(fpf,tpf,thresholds)
 	accuracy,yPred=accuracyScore(threshold,yTrue,yRegression)
 	return accuracy,log_loss(yTrue,yPred),yPred
+
+# Correlogram showing linear correlation coefficient
+def corrCoefficient(x, y, **kws):
+    r, _ = pearsonr(x, y)
+    ax = plt.gca()
+    ax.annotate(u"\u03C1 = {:.2f}".format(r), # unicode code for lowercase rho (ρ)
+                xy=(.1, .9), xycoords=ax.transAxes)
