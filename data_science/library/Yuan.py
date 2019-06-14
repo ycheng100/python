@@ -1,9 +1,9 @@
 from sklearn.metrics import auc,roc_curve,log_loss,accuracy_score
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
-import pandas as pd # creating data frame for regression
+from pandas import DataFrame # For checking data type
 from matplotlib import pyplot as plt
-from scipy.stats import pearsonr # computing correlation coefficient
+from scipy.stats import pearsonr # For computing correlation coefficient
 
 def meshGrid(xlim, ylim, n=30):
     """Create a mesh of points to plot in
@@ -67,7 +67,7 @@ def crossValidationAuc(numFold,clf,X,y,modelType):
 	foldMetrics=np.zeros(shape=(numFold,3))
 
 	i=0
-	if isinstance(X, pd.DataFrame):
+	if isinstance(X, DataFrame):
 		dataX=X.values
 	else:
 		dataX=X
